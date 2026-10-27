@@ -29,6 +29,8 @@ public class ProjectionActivity extends ActivityBase {
 
 	static FutureSupplier<Intent> start() {
 		if (promise != null) promise.cancel();
+		// Erdal Auto: a previous, abandoned permission request must not block a new one.
+		starting = false;
 		var p = promise = new Promise<>();
 		p.thenRun(() -> {
 			if (promise != p) return;
