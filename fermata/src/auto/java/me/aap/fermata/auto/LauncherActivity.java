@@ -69,6 +69,7 @@ import me.aap.utils.ui.view.MovableRecyclerViewAdapter;
 
 public class LauncherActivity extends AppCompatActivity {
 	public static final String INTENT_EXTRA_MODE = "fermata.mirror.mode";
+	static final String EXTRA_PICK_WALLPAPER = "erdal.pickWallpaper";
 	private static final Pref<Supplier<String[]>> AA_LAUNCHER_APPS = Pref.sa("AA_LAUNCHER_APPS",
 			() -> new String[]{FermataApplication.get().getPackageName(), "com.android.chrome",
 					"com.google.android.gm", "com.google.android.apps.maps", "com.google.android.youtube"});
@@ -95,7 +96,30 @@ public class LauncherActivity extends AppCompatActivity {
 
 		MainActivityDelegate.setTheme(this, true);
 		setRequestedOrientation();
-		home = new ErdalHomeView(this);
+		home = new ErdalHomeView(this, new ErdalHomeView.Host() {
+			@Override
+			public boolean isCar() {
+				return false;
+			}
+
+			@Override
+			public void openSection(String section) {
+				ErdalHomeView.openSectionOnPhone(section);
+			}
+
+			@Override
+			public void openExternal(Intent intent) {
+				ErdalHomeView.startOnPhone(intent);
+			}
+
+			@Override
+			public void pickWallpaper() {
+				LauncherActivity.this.pickWallpaper();
+			}
+		});
+		if ((intent != null) && intent.getBooleanExtra(EXTRA_PICK_WALLPAPER, false)) {
+			getWindow().getDecorView().post(this::pickWallpaper);
+		}
 		setContentView(home);
 		var w = getWindow();
 		w.addFlags(
@@ -156,6 +180,7 @@ public class LauncherActivity extends AppCompatActivity {
 	protected void onNewIntent(Intent intent) {
 		super.onNewIntent(intent);
 		if (INTENT_ACTION_FINISH.equals(intent.getAction())) finish();
+		else if (intent.getBooleanExtra(EXTRA_PICK_WALLPAPER, false)) pickWallpaper();
 	}
 
 	@Override

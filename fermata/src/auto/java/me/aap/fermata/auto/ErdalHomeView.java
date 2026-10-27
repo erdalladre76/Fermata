@@ -6,8 +6,6 @@ import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
@@ -92,7 +90,23 @@ public class ErdalHomeView extends FrameLayout {
 	private static final Set<String> VIDEO_APPS =
 			new HashSet<>(java.util.Arrays.asList("yt", "tiktok", "film", "tv"));
 
-	private final Activity act;
+	/**
+	 * Where the home screen runs: on the phone (mirrored) or directly on the car screen.
+	 */
+	public interface Host {
+		boolean isCar();
+
+		/** Open a Fermata section: music, tv, youtube, web, settings. */
+		void openSection(String section);
+
+		/** Open a phone app or system screen. */
+		void openExternal(Intent intent);
+
+		void pickWallpaper();
+	}
+
+	private final Context act;
+	private final Host host;
 	private final Handler handler = new Handler(Looper.getMainLooper());
 	private final AudioManager audio;
 	private final Typeface clockFont;
@@ -128,9 +142,10 @@ public class ErdalHomeView extends FrameLayout {
 		}
 	};
 
-	public ErdalHomeView(Activity act) {
+	public ErdalHomeView(Context act, Host host) {
 		super(act);
 		this.act = act;
+		this.host = host;
 		audio = (AudioManager) act.getSystemService(Context.AUDIO_SERVICE);
 		Typeface tf;
 		try {
@@ -175,6 +190,10 @@ public class ErdalHomeView extends FrameLayout {
 	}
 
 	public boolean onBack() {
+		if (overlay != null) {
+			closeOverlay();
+			return true;
+		}
 		if (editing) {
 			editing = false;
 			build();
@@ -193,6 +212,7 @@ public class ErdalHomeView extends FrameLayout {
 
 	private void build() {
 		removeAllViews();
+		overlay = null;
 		dark = ErdalSettings.isDark(act);
 		if (dark) {
 			cBg = 0xFF0B1020;
@@ -450,7 +470,7 @@ public class ErdalHomeView extends FrameLayout {
 		row.addView(editing ? control("check", "Kaydet", 0xFF1E8E3E, Color.WHITE, v -> {
 			editing = false;
 			ErdalSettings.setHidden(act, hidden);
-			Toast.makeText(act, "Ana ekran kaydedildi", Toast.LENGTH_SHORT).show();
+			message("Ana ekran kaydedildi");
 			build();
 		}) : control("edit", "Düzenle", cCard, cText, v -> {
 			editing = true;
@@ -816,12 +836,8 @@ public class ErdalHomeView extends FrameLayout {
 
 	private void open(String id) {
 		if (moving && VIDEO_APPS.contains(id) && ErdalSettings.isVideoWarning(act)) {
-			new AlertDialog.Builder(act)
-					.setTitle("Araç hareket hâlinde")
-					.setMessage("Video yolcular için. Sürücü yola baksın.")
-					.setNegativeButton("Vazgeç", null)
-					.setPositiveButton("Anladım, aç", (d, w) -> doOpen(id))
-					.show();
+			showMenu("Araç hareket hâlinde · Video yolcular için, sürücü yola baksın.",
+					new String[]{"Anladım, aç"}, w -> doOpen(id));
 			return;
 		}
 		doOpen(id);
@@ -857,10 +873,7 @@ public class ErdalHomeView extends FrameLayout {
 	}
 
 	private void openFermata(String section) {
-		var i = new Intent(act, MainActivity.class);
-		i.setAction(EXTRA_OPEN);
-		i.putExtra(EXTRA_OPEN, section);
-		start(i);
+		host.openSection(section);
 	}
 
 	private boolean launchFirst(String... pkgs) {
@@ -877,28 +890,46 @@ public class ErdalHomeView extends FrameLayout {
 
 	private void launchOrStore(String... pkgs) {
 		if (launchFirst(pkgs)) return;
-		Toast.makeText(act, "Uygulama yüklü değil, Google Play açılıyor", Toast.LENGTH_LONG).show();
+		message("Uygulama yüklü değil, Google Play açılıyor");
 		start(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkgs[0])));
 	}
 
 	private void start(Intent i) {
 		try {
 			i.addFlags(FLAG_ACTIVITY_NEW_TASK);
-			i.putExtra(LauncherActivity.INTENT_EXTRA_MODE, FermataApplication.get().getMirroringMode());
-			act.startActivity(i);
-			MirrorDisplay.disableAccelRotation();
+			host.openExternal(i);
 		} catch (ActivityNotFoundException ex) {
-			Toast.makeText(act, "Açılamadı", Toast.LENGTH_SHORT).show();
+			message("Açılamadı");
 		} catch (Throwable ex) {
-			Toast.makeText(act, String.valueOf(ex.getLocalizedMessage()), Toast.LENGTH_LONG).show();
+			message(String.valueOf(ex.getLocalizedMessage()));
 		}
+	}
+
+	/** Phone-side implementation of {@link Host#openExternal}. */
+	static void startOnPhone(Intent i) {
+		i.addFlags(FLAG_ACTIVITY_NEW_TASK);
+		i.putExtra(LauncherActivity.INTENT_EXTRA_MODE, FermataApplication.get().getMirroringMode());
+		FermataApplication.get().startActivity(i);
+		MirrorDisplay.disableAccelRotation();
+	}
+
+	/** Phone-side implementation of {@link Host#openSection}. */
+	static void openSectionOnPhone(String section) {
+		var i = new Intent(FermataApplication.get(), MainActivity.class);
+		i.setAction(EXTRA_OPEN);
+		i.putExtra(EXTRA_OPEN, section);
+		startOnPhone(i);
 	}
 
 	private void navigateTo(String key) {
 		var addr = ErdalSettings.getAddress(act, key);
 		if (addr.isEmpty()) {
-			addressDialog(key, true);
-			return;
+			if (!host.isCar()) {
+				addressDialog(key, true);
+				return;
+			}
+			// Google Maps understands its saved places by these names.
+			addr = "ev".equals(key) ? "Ev" : "İş";
 		}
 		var maps = act.getPackageManager().getLaunchIntentForPackage("com.google.android.apps.maps");
 		if (maps != null) {
@@ -918,7 +949,7 @@ public class ErdalHomeView extends FrameLayout {
 		try {
 			var i = new Intent(Intent.ACTION_VOICE_COMMAND);
 			i.addFlags(FLAG_ACTIVITY_NEW_TASK);
-			act.startActivity(i);
+			host.openExternal(i);
 		} catch (Throwable ex) {
 			start(new Intent("android.intent.action.ASSIST"));
 		}
@@ -958,14 +989,14 @@ public class ErdalHomeView extends FrameLayout {
 	private void wallpaperDialog() {
 		String[] keys = {"mavi", "gunbatimi", "orman", "sade", "foto"};
 		String[] names = {"Mavi", "Gün batımı", "Orman", "Sade", "Galeriden fotoğraf seç…"};
-		new AlertDialog.Builder(act).setTitle("Arka plan").setItems(names, (d, w) -> {
+		showMenu("Arka plan", names, w -> {
 			if (w == 4) {
-				if (act instanceof LauncherActivity la) la.pickWallpaper();
+				host.pickWallpaper();
 			} else {
 				ErdalSettings.setWallpaper(act, keys[w]);
 				build();
 			}
-		}).setNegativeButton("Kapat", null).show();
+		});
 	}
 
 	@SuppressLint("MissingPermission")
@@ -982,10 +1013,9 @@ public class ErdalHomeView extends FrameLayout {
 			}
 		}
 		if (items.isEmpty()) items.add(hasBtPermission() ? "Eşleşmiş cihaz yok" : "Bluetooth izni gerekli");
-		new AlertDialog.Builder(act).setTitle("Bluetooth cihazları")
-				.setItems(items.toArray(new String[0]), (d, w) -> start(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)))
-				.setPositiveButton("Yeni cihaz ekle / ses çıkışı", (d, w) -> start(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)))
-				.setNegativeButton("Kapat", null).show();
+		items.add("+ Yeni cihaz ekle / ses çıkışı (telefonda)");
+		showMenu("Bluetooth cihazları", items.toArray(new String[0]),
+				w -> start(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)));
 	}
 
 	private void settingsDialog() {
@@ -1001,10 +1031,16 @@ public class ErdalHomeView extends FrameLayout {
 				"Gizlenen simgeleri geri getir",
 				"Fermata ayarları",
 		};
-		new AlertDialog.Builder(act).setTitle("Erdal Auto ayarları").setItems(items, (d, w) -> {
+		showMenu("Erdal Auto ayarları", items, w -> {
 			switch (w) {
-				case 0 -> addressDialog("ev", false);
-				case 1 -> addressDialog("is", false);
+				case 0 -> {
+					if (host.isCar()) message("Adresi araç park hâlindeyken telefondan girin");
+					else addressDialog("ev", false);
+				}
+				case 1 -> {
+					if (host.isCar()) message("Adresi araç park hâlindeyken telefondan girin");
+					else addressDialog("is", false);
+				}
 				case 2 -> {
 					ErdalSettings.setAutoNight(act, !autoNight);
 					build();
@@ -1027,7 +1063,7 @@ public class ErdalHomeView extends FrameLayout {
 				default -> {
 				}
 			}
-		}).setNegativeButton("Kapat", null).show();
+		});
 	}
 
 	private void addressDialog(String key, boolean thenNavigate) {
@@ -1035,19 +1071,104 @@ public class ErdalHomeView extends FrameLayout {
 		input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS);
 		input.setText(ErdalSettings.getAddress(act, key));
 		input.setHint("Adres veya yer adı");
-		var box = new FrameLayout(act);
-		box.setPadding(px(24), px(8), px(24), 0);
-		box.addView(input);
-		new AlertDialog.Builder(act).setTitle("ev".equals(key) ? "Ev adresi" : "İş adresi").setView(box)
-				.setNegativeButton("Vazgeç", null)
-				.setPositiveButton("Kaydet", (d, w) -> {
-					ErdalSettings.setAddress(act, key, input.getText().toString().trim());
-					if (thenNavigate && !ErdalSettings.getAddress(act, key).isEmpty()) navigateTo(key);
-				}).show();
+		input.setTextSize(TypedValue.COMPLEX_UNIT_PX, 22 * s);
+		input.setTextColor(cText);
+		input.setHintTextColor(cSub);
+		showPanel("ev".equals(key) ? "Ev adresi" : "İş adresi", input, "Kaydet", () -> {
+			ErdalSettings.setAddress(act, key, input.getText().toString().trim());
+			if (thenNavigate && !ErdalSettings.getAddress(act, key).isEmpty()) navigateTo(key);
+		});
 	}
 
 	private static String emptyDash(String s) {
 		return s.isEmpty() ? "—" : s;
+	}
+
+	private View overlay;
+
+	private void closeOverlay() {
+		if (overlay != null) {
+			removeView(overlay);
+			overlay = null;
+		}
+	}
+
+	private LinearLayout openOverlay(String title) {
+		closeOverlay();
+		var shade = new FrameLayout(act);
+		shade.setBackgroundColor(0x99000000);
+		shade.setClickable(true);
+		shade.setOnClickListener(v -> closeOverlay());
+		var card = new LinearLayout(act);
+		card.setOrientation(LinearLayout.VERTICAL);
+		card.setPadding(px(28), px(24), px(28), px(20));
+		card.setBackground(round(dark ? 0xFF161C2C : 0xFFFFFFFF, 32));
+		card.setClickable(true);
+		card.setElevation(px(12));
+		var t = text(title, 24, cText, true);
+		card.addView(t, lp(MATCH_PARENT, WRAP_CONTENT, 0, 12));
+		shade.addView(card, new LayoutParams(px(680), WRAP_CONTENT, Gravity.CENTER));
+		addView(shade, new LayoutParams(MATCH_PARENT, MATCH_PARENT));
+		overlay = shade;
+		return card;
+	}
+
+	private void showMenu(String title, String[] items, java.util.function.IntConsumer onPick) {
+		var card = openOverlay(title);
+		var list = new LinearLayout(act);
+		list.setOrientation(LinearLayout.VERTICAL);
+		for (int i = 0; i < items.length; i++) {
+			int idx = i;
+			var row = text(items[i], 20, cText, false);
+			row.setGravity(Gravity.CENTER_VERTICAL);
+			row.setPadding(px(18), 0, px(18), 0);
+			row.setBackground(ripple(round(cChip, 18)));
+			row.setOnClickListener(v -> {
+				closeOverlay();
+				onPick.accept(idx);
+			});
+			list.addView(row, lp(MATCH_PARENT, px(64), 0, 8));
+		}
+		var scroll = new android.widget.ScrollView(act);
+		scroll.addView(list);
+		card.addView(scroll, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+		var close = text("Kapat", 18, Color.WHITE, true);
+		close.setGravity(Gravity.CENTER);
+		close.setBackground(ripple(round(0xFF1A73E8, 999)));
+		close.setOnClickListener(v -> closeOverlay());
+		var clp = lp(px(160), px(56), 8, 0);
+		clp.gravity = Gravity.END;
+		card.addView(close, clp);
+	}
+
+	private void showPanel(String title, View content, String okLabel, Runnable onOk) {
+		var card = openOverlay(title);
+		card.addView(content, lp(MATCH_PARENT, WRAP_CONTENT, 0, 12));
+		var row = new LinearLayout(act);
+		row.setGravity(Gravity.END);
+		var cancel = text("Vazgeç", 18, cText, true);
+		cancel.setGravity(Gravity.CENTER);
+		cancel.setBackground(ripple(round(cChip, 999)));
+		cancel.setOnClickListener(v -> closeOverlay());
+		row.addView(cancel, new LinearLayout.LayoutParams(px(150), px(56)));
+		var ok = text(okLabel, 18, Color.WHITE, true);
+		ok.setGravity(Gravity.CENTER);
+		ok.setBackground(ripple(round(0xFF1A73E8, 999)));
+		ok.setOnClickListener(v -> {
+			closeOverlay();
+			onOk.run();
+		});
+		row.addView(ok, lpH(px(150), px(56), 12));
+		card.addView(row, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+	}
+
+	private void message(String msg) {
+		if (host.isCar()) {
+			showMenu(msg, new String[0], w -> {});
+			handler.postDelayed(this::closeOverlay, 2500);
+		} else {
+			Toast.makeText(act, msg, Toast.LENGTH_SHORT).show();
+		}
 	}
 
 	// ---------------------------------------------------------------- view helpers

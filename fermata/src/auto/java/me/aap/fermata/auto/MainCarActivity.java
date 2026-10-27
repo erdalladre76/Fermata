@@ -46,6 +46,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.apps.auto.sdk.CarActivity;
 import com.google.android.apps.auto.sdk.CarUiController;
 
+import me.aap.fermata.FermataApplication;
 import me.aap.fermata.R;
 import me.aap.fermata.media.service.FermataMediaServiceConnection;
 import me.aap.fermata.ui.activity.FermataActivity;
@@ -113,7 +114,22 @@ public class MainCarActivity extends CarActivity implements FermataActivity {
 		ActivityDelegate.setContextToDelegate(ctx -> d);
 		delegate = completed(d);
 		d.onActivityCreate(state);
+		attachErdalShell(0);
 		return d;
+	}
+
+	private ErdalCarShell erdalShell;
+
+	private void attachErdalShell(int attempt) {
+		if (erdalShell != null) return;
+		try {
+			erdalShell = ErdalCarShell.attach(this);
+		} catch (Throwable err) {
+			Log.e(err, "Failed to attach Erdal home screen");
+		}
+		if ((erdalShell == null) && (attempt < 50)) {
+			FermataApplication.get().getHandler().postDelayed(() -> attachErdalShell(attempt + 1), 200);
+		}
 	}
 
 	@Override
@@ -125,6 +141,10 @@ public class MainCarActivity extends CarActivity implements FermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
+		if (erdalShell != null) {
+			erdalShell.release();
+			erdalShell = null;
+		}
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
 				.thenRun(() -> ActivityDelegate.setContextToDelegate(null));
