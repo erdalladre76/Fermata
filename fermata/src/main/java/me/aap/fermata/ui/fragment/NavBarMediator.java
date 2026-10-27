@@ -243,7 +243,6 @@ public class NavBarMediator extends PrefNavBarMediator
 
 			b.addItem(R.id.nav_about, R.drawable.about, R.string.about);
 			b.addItem(R.id.settings_fragment, R.drawable.settings, R.string.settings);
-			if (BuildConfig.AUTO) b.addItem(R.id.nav_donate, R.drawable.coffee, R.string.donate);
 			b.addItem(R.id.nav_exit, R.drawable.exit, a.isCarActivityNotMirror() ? R.string.restart : R.string.exit);
 		});
 	}
@@ -280,32 +279,6 @@ public class NavBarMediator extends PrefNavBarMediator
 			if (a.isCarActivityNotMirror()) {
 				a.getHandler().postDelayed(() -> System.exit(0), 500);
 			}
-			return true;
-		}
-		MainActivityDelegate a;
-		if (BuildConfig.AUTO && (item.getItemId() == R.id.nav_donate)) {
-			Context ctx = item.getContext();
-			a = MainActivityDelegate.get(ctx);
-
-			DialogInterface.OnClickListener ok = (d, i) -> {
-				IntHolder selection = new IntHolder();
-				String[] wallets = new String[]{"PayPal", "CloudTips", "Yandex",};
-				String[] urls =
-						new String[]{"https://www.paypal.com/donate/?hosted_button_id=NP5Q3YDSCJ98N",
-								"https://pay.cloudtips.ru/p/a03a73da", "https://yoomoney.ru/to/410014661137336"};
-
-				a.createDialogBuilder().setTitle(R.drawable.coffee, R.string.donate)
-						.setSingleChoiceItems(wallets, 0, (dlg, which) -> selection.value = which)
-						.setNegativeButton(android.R.string.cancel, null)
-						.setPositiveButton(android.R.string.ok, (d1, w1) -> openUrl(ctx,
-								urls[selection.value]))
-						.show();
-			};
-
-			a.createDialogBuilder().setTitle(R.drawable.coffee, R.string.donate)
-					.setMessage(R.string.donate_text).setNegativeButton(android.R.string.cancel, null)
-					.setPositiveButton(android.R.string.ok, ok).show();
-
 			return true;
 		}
 

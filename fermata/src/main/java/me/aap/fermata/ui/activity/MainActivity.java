@@ -177,7 +177,8 @@ public class MainActivity extends SplitCompatActivityBase
 	}
 
 	public void checkUpdates() {
-		if (!BuildConfig.AUTO) return;
+		// Erdal Auto: no automatic updates from the original Fermata project.
+		if (true) return;
 
 		PreferenceStore ps = FermataApplication.get().getPreferenceStore();
 		Pref<Supplier<String[]>> deletePref = sa("DELETE_ON_STARTUP", new String[0]);
