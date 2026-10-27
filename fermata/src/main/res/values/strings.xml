@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name_mobile_release" translatable="false">Fermata</string>
-    <string name="app_name_auto_release" translatable="false">Fermata Auto</string>
+    <string name="app_name_auto_release" translatable="false">Erdal Auto</string>
     <string name="app_name_mobile_debug" translatable="false">Debug Fermata</string>
     <string name="app_name_auto_debug" translatable="false">Debug Fermata Auto</string>
-    <string name="mirror_service_name_release" translatable="false">Fermata Mirror</string>
+    <string name="mirror_service_name_release" translatable="false">Erdal Ana Ekran</string>
     <string name="mirror_service_name_debug" translatable="false">Debug Fermata Mirror</string>
-    <string name="mirror_fs_service_name_release" translatable="false">FS Fermata Mirror</string>
+    <string name="mirror_fs_service_name_release" translatable="false">Erdal Tam Ekran</string>
     <string name="mirror_fs_service_name_debug" translatable="false">Debug FS Fermata Mirror</string>
     <string name="media_service_name_mobile_release" translatable="false">@string/app_name_mobile_release</string>
-    <string name="media_service_name_auto_release" translatable="false">Fermata Media Service</string>
+    <string name="media_service_name_auto_release" translatable="false">Erdal Müzik</string>
     <string name="media_service_name_mobile_debug" translatable="false">@string/app_name_mobile_debug</string>
     <string name="media_service_name_auto_debug" translatable="false">Debug Fermata Media Service</string>
     <string name="engine_mp_name" translatable="false">MediaPlayer</string>
