@@ -164,6 +164,7 @@ public class LauncherActivity extends AppCompatActivity {
 		activeInstance = this;
 		ErdalSettings.setHomeVisible(true);
 		if (home != null) home.refresh();
+		ProjectionActivity.resumePending(this);
 		setRequestedOrientation();
 	}
 

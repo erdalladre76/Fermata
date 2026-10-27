@@ -6,7 +6,12 @@ import static android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES;
 import static me.aap.utils.async.Completed.completedVoid;
 import static me.aap.utils.function.ResultConsumer.Cancel.isCancellation;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.database.ContentObserver;
 import android.media.projection.MediaProjectionManager;
@@ -37,16 +42,73 @@ public class ProjectionActivity extends ActivityBase {
 			promise = null;
 			starting = false;
 		});
+		var app = FermataApplication.get();
 		try {
-			var app = FermataApplication.get();
 			var intent = new Intent(app, ProjectionActivity.class);
 			intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
 			app.startActivity(intent);
 		} catch (Exception err) {
 			Log.e(err, "Failed to start ProjectionActivity");
-			p.completeExceptionally(err);
 		}
+		// Erdal Auto: newer Android versions block activity starts from the background.
+		// A notification lets the user open the permission screen with one tap.
+		showNotification(app);
+		p.thenRun(() -> cancelNotification(app));
 		return p;
+	}
+
+	private static final String NOTIF_CHANNEL = "erdal_projection";
+	private static final int NOTIF_ID = 73021;
+
+	/**
+	 * Called from a foreground screen (the Erdal home screen on the phone):
+	 * if the car is waiting for the screen-share permission, ask for it now.
+	 */
+	static void resumePending(Context ctx) {
+		if ((promise == null) || starting || promise.isDone()) return;
+		try {
+			var intent = new Intent(ctx, ProjectionActivity.class);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
+			ctx.startActivity(intent);
+		} catch (Exception err) {
+			Log.e(err, "Failed to start ProjectionActivity");
+		}
+	}
+
+	private static void showNotification(Context ctx) {
+		try {
+			var nm = (NotificationManager) ctx.getSystemService(NOTIFICATION_SERVICE);
+			if (nm == null) return;
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+				var ch = new NotificationChannel(NOTIF_CHANNEL, "Araç ekranı izni",
+						NotificationManager.IMPORTANCE_HIGH);
+				nm.createNotificationChannel(ch);
+			}
+			var intent = new Intent(ctx, ProjectionActivity.class);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
+			var pi = PendingIntent.getActivity(ctx, 0, intent,
+					PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+			Notification.Builder b = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ?
+					new Notification.Builder(ctx, NOTIF_CHANNEL) : new Notification.Builder(ctx);
+			b.setSmallIcon(R.drawable.notification)
+					.setContentTitle("Araç ekranı için dokunun")
+					.setContentText("Erdal Auto ekranı araca aktarmak için izin istiyor")
+					.setContentIntent(pi)
+					.setAutoCancel(true)
+					.setCategory(Notification.CATEGORY_CALL)
+					.setPriority(Notification.PRIORITY_MAX);
+			nm.notify(NOTIF_ID, b.build());
+		} catch (Throwable err) {
+			Log.e(err, "Failed to show projection notification");
+		}
+	}
+
+	private static void cancelNotification(Context ctx) {
+		try {
+			var nm = (NotificationManager) ctx.getSystemService(NOTIFICATION_SERVICE);
+			if (nm != null) nm.cancel(NOTIF_ID);
+		} catch (Throwable ignore) {
+		}
 	}
 
 	@Override
