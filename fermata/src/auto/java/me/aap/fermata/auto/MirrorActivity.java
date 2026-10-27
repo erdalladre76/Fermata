@@ -11,8 +11,11 @@ import static me.aap.utils.ui.UiUtils.toPx;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.graphics.Point;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -63,12 +66,57 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		s.getHolder().addCallback(this);
 		v.addView(s);
 		v.addView(tb);
+
+		var dim = new View(this);
+		dim.setBackgroundColor(Color.BLACK);
+		dim.setAlpha(ErdalSettings.getDimAlpha(this));
+		v.addView(dim, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
+		dimListener = () -> dim.post(() -> dim.setAlpha(ErdalSettings.getDimAlpha(this)));
+		ErdalSettings.addDimListener(dimListener);
+
+		var dm = getResources().getDisplayMetrics();
+		int btn = (int) Math.max(Math.min(dm.widthPixels, dm.heightPixels) / 10f, toPx(this, 40));
+		var nav = new LinearLayout(this);
+		nav.setOrientation(LinearLayout.HORIZONTAL);
+		nav.addView(navButton("back", 0xE6222A38, btn, v1 -> onBackButtonClick()),
+				new LinearLayout.LayoutParams(btn, btn));
+		var hlp = new LinearLayout.LayoutParams(btn, btn);
+		hlp.leftMargin = btn / 3;
+		nav.addView(navButton("home", 0xFF1A73E8, btn, v1 -> onHomeButtonClick()), hlp);
+		var nlp = new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT,
+				Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+		nlp.bottomMargin = btn / 5;
+		v.addView(nav, nlp);
+		homeListener = () -> nav.post(() -> nav.setVisibility(
+				ErdalSettings.isHomeVisible() ? View.GONE : View.VISIBLE));
+		ErdalSettings.addHomeListener(homeListener);
+		homeListener.run();
+
 		v.setLayoutParams(new ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT));
 		setContentView(v);
 	}
 
+	private Runnable dimListener;
+	private Runnable homeListener;
+
+	private ImageView navButton(String icon, int bg, int size, View.OnClickListener l) {
+		var b = new ImageView(this);
+		var shape = new GradientDrawable();
+		shape.setShape(GradientDrawable.OVAL);
+		shape.setColor(bg);
+		b.setBackground(shape);
+		b.setImageDrawable(ErdalGlyph.of(icon, Color.WHITE));
+		int pad = size / 4;
+		b.setPadding(pad, pad, pad, pad);
+		b.setElevation(size / 10f);
+		b.setOnClickListener(l);
+		return b;
+	}
+
 	@Override
 	public void onDestroy() {
+		if (dimListener != null) ErdalSettings.removeDimListener(dimListener);
+		if (homeListener != null) ErdalSettings.removeHomeListener(homeListener);
 		md.release();
 		md = null;
 		super.onDestroy();

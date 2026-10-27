@@ -14,6 +14,7 @@ import static me.aap.utils.ui.UiUtils.toIntPx;
 import static me.aap.utils.ui.UiUtils.toPx;
 import static me.aap.utils.ui.activity.ActivityDelegate.FULLSCREEN_FLAGS;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
@@ -23,6 +24,7 @@ import android.content.res.Configuration;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -35,6 +37,8 @@ import android.widget.ImageView;
 import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -91,8 +95,8 @@ public class LauncherActivity extends AppCompatActivity {
 
 		MainActivityDelegate.setTheme(this, true);
 		setRequestedOrientation();
-		var v = new AppListView(this);
-		setContentView(v);
+		home = new ErdalHomeView(this);
+		setContentView(home);
 		var w = getWindow();
 		w.addFlags(
 				FLAG_KEEP_SCREEN_ON | FLAG_TURN_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED);
@@ -100,11 +104,52 @@ public class LauncherActivity extends AppCompatActivity {
 		getOnBackPressedDispatcher().addCallback(new OnBackPressedCallback(true) {
 			@Override
 			public void handleOnBackPressed() {
-				if (v.selectApps != null) v.selectApps();
+				home.onBack();
 			}
 		});
-		FermataApplication.get().getHandler()
-				.postDelayed(() -> v.configure(this, getResources().getConfiguration()), 1000);
+		requestErdalPermissions();
+	}
+
+	private ErdalHomeView home;
+	private final ActivityResultLauncher<String[]> wallpaperPicker =
+			registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
+				if (uri == null) return;
+				try {
+					getContentResolver().takePersistableUriPermission(uri,
+							Intent.FLAG_GRANT_READ_URI_PERMISSION);
+				} catch (Exception ignore) {
+				}
+				ErdalSettings.setWallpaperUri(this, uri.toString());
+				if (home != null) home.refresh();
+			});
+
+	void pickWallpaper() {
+		try {
+			wallpaperPicker.launch(new String[]{"image/*"});
+		} catch (Exception err) {
+			Toast.makeText(this, err.getLocalizedMessage(), Toast.LENGTH_LONG).show();
+		}
+	}
+
+	private void requestErdalPermissions() {
+		var perms = new ArrayList<String>();
+		perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+		perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+			perms.add(Manifest.permission.BLUETOOTH_CONNECT);
+		}
+		var missing = new ArrayList<String>();
+		for (var p : perms) {
+			if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) missing.add(p);
+		}
+		if (!missing.isEmpty()) requestPermissions(missing.toArray(new String[0]), 7301);
+	}
+
+	@Override
+	public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+																				 @NonNull int[] grantResults) {
+		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+		if (requestCode == 7301 && home != null) home.onPermissionsChanged();
 	}
 
 	@Override
@@ -117,6 +162,8 @@ public class LauncherActivity extends AppCompatActivity {
 	protected void onResume() {
 		super.onResume();
 		activeInstance = this;
+		ErdalSettings.setHomeVisible(true);
+		if (home != null) home.refresh();
 		setRequestedOrientation();
 	}
 
@@ -124,6 +171,7 @@ public class LauncherActivity extends AppCompatActivity {
 	protected void onPause() {
 		super.onPause();
 		activeInstance = null;
+		ErdalSettings.setHomeVisible(false);
 	}
 
 	private void setRequestedOrientation() {

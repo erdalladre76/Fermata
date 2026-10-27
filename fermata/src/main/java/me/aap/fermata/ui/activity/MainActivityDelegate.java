@@ -288,6 +288,25 @@ public class MainActivityDelegate extends ActivityDelegate
 			return completed(true);
 		}
 
+		String erdalOpen = intent.getStringExtra("erdal.open");
+		if (erdalOpen != null) {
+			int fid;
+			if ("tv".equals(erdalOpen)) fid = R.id.tv_fragment;
+			else if ("youtube".equals(erdalOpen)) fid = R.id.youtube_fragment;
+			else if ("web".equals(erdalOpen)) fid = R.id.web_browser_fragment;
+			else if ("settings".equals(erdalOpen)) fid = R.id.settings_fragment;
+			else fid = R.id.folders_fragment;
+			post(() -> {
+				try {
+					if (showFragment(fid) == null) showFragment(R.id.folders_fragment);
+				} catch (Throwable err) {
+					Log.e(err, "Failed to open section ", erdalOpen);
+					showFragment(R.id.folders_fragment);
+				}
+			});
+			return completed(true);
+		}
+
 		for (FermataAddon a : AddonManager.get().getAddons()) {
 			if (a.handleIntent(this, intent)) return completed(true);
 		}
